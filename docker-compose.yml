@@ -1,0 +1,85 @@
+# Teamcentre stack: Postgres, Redis, FastAPI API, Vite dev frontend.
+# Usage: docker compose up --build
+# Open the UI and API using your host name or IP and published ports (e.g. :5173 and :8000).
+#
+# Copy .env.example to .env and set JWT_SECRET (and optional overrides). Compose forces DB/Redis
+# URLs for the `api` container; your .env DATABASE_URL is for local runs outside Docker.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: teamcenter_analytics
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d teamcenter_analytics"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      # Overrides host-oriented values from .env when running inside Compose
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/teamcenter_analytics
+      REDIS_URL: redis://redis:6379/0
+      CORS_ORIGINS: ${CORS_ORIGINS:-}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: ${VITE_API_URL:-}
+    environment:
+      # Proxy /api from the Vite dev server to the API service (no fixed host in the bundle).
+      VITE_API_URL: ${VITE_API_URL:-}
+      VITE_PROXY_API_TARGET: ${VITE_PROXY_API_TARGET:-http://api:8000}
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api
+
+  # One-shot: create tables from SQLAlchemy models (non-destructive).
+  # Usage: docker compose run --rm db-push
+  db-push:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/teamcenter_analytics
+    command: ["python", "scripts/db_push.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
