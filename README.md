@@ -87,10 +87,10 @@ Python **3.12+**, **Node.js 20+** (matching the frontend image), a running **Pos
    - **API docs (Swagger):** `http://<your-host>:8000/docs`
    - **Health check:** `http://<your-host>:8000/health`
 
-6. **Optional — database schema helper** (the API also creates tables on startup; use this if you want to sync schema without starting the API):
+6. **Optional — database schema helper** (the API also creates tables on startup). It is **not** started by `docker compose up`; run it manually when needed:
 
    ```bash
-   docker compose run --rm db-push
+   docker compose --profile tools run --rm db-push
    ```
 
 7. **Stop the stack**
@@ -200,8 +200,17 @@ Live mode mirrors the browser flow: **GET** warmup on `TEAMCENTER_WARMUP_PATH`, 
 
 | Script | Usage |
 | --- | --- |
-| `backend/scripts/db_push.py` | `create_all` for SQLAlchemy models (non-destructive). |
+| `backend/scripts/db_push.py` | `create_all` for SQLAlchemy models (non-destructive). Docker: `docker compose --profile tools run --rm db-push`. |
 | `backend/scripts/tc_smoke_test.py` | Requires `TEAMCENTRE_API_BASE`; hits `/health`, login, and `POST /api/fetch/runs`. |
+
+## Docker troubleshooting
+
+| What you see | Meaning / what to do |
+| --- | --- |
+| `reading from stdin 1.47kB` during build | **Normal.** BuildKit is loading the bake definition; it is not an error. |
+| `Bind for 0.0.0.0:6379 failed: port is already allocated` | Something else on the host is using **6379** (often another Redis). Stop it (`fuser`, `ss -tlnp`, or Docker: stop the other container) or change the Redis **ports** mapping in `docker-compose.yml` (e.g. `"6380:6379"`). |
+| `could not translate host name "db" to address` | The API (or `db-push`) cannot resolve the Postgres service name **`db`**. Usually the **API/`db-push` are not on the same Compose network** as `db`, or your compose file renamed the DB service. Use one shared network for `db`, `redis`, `api`, `web` (as in this repo), keep the Postgres service name **`db`**, and ensure **`environment.DATABASE_URL`** in compose uses `@db:5432` for containers. Avoid `network_mode: host` on `api` unless you point `DATABASE_URL` at the host. |
+| Redis `Memory overcommit must be enabled` | **Warning only** on Linux. Optional: `sudo sysctl vm.overcommit_memory=1` or set it in `sysctl.conf` (see Redis log link). |
 
 ## Security notes
 
