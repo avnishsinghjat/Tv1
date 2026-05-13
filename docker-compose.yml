@@ -53,6 +53,12 @@ services:
       DATABASE_URL: postgresql+psycopg2://postgres:postgres@db:5432/teamcenter_analytics
       REDIS_URL: redis://redis:6379/0
       CORS_ORIGINS: ${CORS_ORIGINS:-}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8000/health || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 8
+      start_period: 120s
     ports:
       - "8000:8000"
     depends_on:
@@ -75,7 +81,8 @@ services:
     ports:
       - "5173:5173"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   # One-shot: create tables from SQLAlchemy models (non-destructive).
   # Not part of default `up` (avoids racing API startup). Usage:

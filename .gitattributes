@@ -1,0 +1,3 @@
+# Normalize line endings for env templates on Linux / in containers.
+.env.example text eol=lf
+.env text eol=lf

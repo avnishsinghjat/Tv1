@@ -5,7 +5,7 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field, computed_field
+from pydantic import Field, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +29,24 @@ class Settings(BaseSettings):
     )
 
     redis_url: str | None = Field(default=None, validation_alias="REDIS_URL")
+
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def strip_database_url(cls, v: object) -> object:
+        # Windows CRLF in .env breaks hostname resolution inside Linux containers.
+        if isinstance(v, str):
+            return v.strip().replace("\r", "").strip()
+        return v
+
+    @field_validator("redis_url", mode="before")
+    @classmethod
+    def strip_redis_url(cls, v: object) -> object:
+        if v is None or (isinstance(v, str) and not v.strip()):
+            return None
+        if isinstance(v, str):
+            s = v.strip().replace("\r", "").strip()
+            return s if s else None
+        return v
 
     jwt_secret: str = Field(default="change-me-in-production", validation_alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", validation_alias="JWT_ALGORITHM")
