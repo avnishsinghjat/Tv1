@@ -42,58 +42,112 @@ flowchart LR
 - `docker-compose.yml` — full stack and published ports (**5173** web, **8000** API, **5432** Postgres, **6379** Redis).
 - `.env.example` — documented environment variables (copy to `.env`).
 
-## Quick start (Docker)
+## Install and run
 
-1. Copy environment template and set secrets:
+### Prerequisites
+
+**Option A — Docker (recommended)**  
+[Docker Engine](https://docs.docker.com/engine/install/) and [Docker Compose v2](https://docs.docker.com/compose/install/) (`docker compose` CLI).
+
+**Option B — Local tools only**  
+Python **3.12+**, **Node.js 20+** (matching the frontend image), a running **PostgreSQL** instance (16+ is what Compose uses), and optionally **Redis** if you want fetch caching.
+
+### Install and run with Docker Compose
+
+1. **Clone** the repository (if you do not already have it):
+
+   ```bash
+   git clone <repository-url>
+   cd <repository-directory>
+   ```
+
+2. **Create environment file** from the template:
 
    ```bash
    cp .env.example .env
    ```
 
-   Edit `.env`: set `JWT_SECRET`, and for **live** Teamcenter set `TEAMCENTER_MOCK_MODE=false`, `TEAMCENTER_BASE_URL`, `TEAMCENTER_USER`, and `TEAMCENTER_PASSWORD`.
+3. **Edit `.env`** (required fields):
 
-2. Start services:
+   - Set `JWT_SECRET` to a long random string (do not use the example value in production).
+   - The UI login uses `ADMIN_USERNAME` / `ADMIN_PASSWORD` (defaults are often `admin` / `admin` until you change them).
+   - For **live** Teamcenter: set `TEAMCENTER_MOCK_MODE=false`, `TEAMCENTER_BASE_URL`, `TEAMCENTER_USER`, and `TEAMCENTER_PASSWORD`.
+
+4. **Build and start** all services (Postgres, Redis, API, Vite web):
 
    ```bash
    docker compose up --build
    ```
 
-3. Open the UI using your machine **hostname or IP** and port **5173**. The API is on port **8000**; interactive docs are at `/docs` on the API port.
+   Add `-d` to run in the background: `docker compose up --build -d`.
 
-4. Optional: ensure tables exist (startup also runs `create_all`, but you can run the helper):
+5. **Open the app**
+
+   - **Web UI:** `http://<your-host>:5173` (use your machine’s hostname or IP, not only `127.0.0.1` if others need access).
+   - **API docs (Swagger):** `http://<your-host>:8000/docs`
+   - **Health check:** `http://<your-host>:8000/health`
+
+6. **Optional — database schema helper** (the API also creates tables on startup; use this if you want to sync schema without starting the API):
 
    ```bash
    docker compose run --rm db-push
    ```
 
-### How the browser reaches the API
+7. **Stop the stack**
 
-- **Default in Compose:** `VITE_API_URL` is empty and `VITE_PROXY_API_TARGET` points the Vite dev server at the `api` service. The UI calls relative `/api/...`; Vite proxies those to FastAPI.
-- **Split origins:** set `VITE_API_URL` to the full public API origin and configure `CORS_ORIGINS` to include the UI origin.
+   ```bash
+   docker compose down
+   ```
 
-## Local development (without Docker)
+   To remove containers and the Postgres volume (wipes local DB data): `docker compose down -v`.
 
-**API**
+#### How the browser reaches the API (Docker)
 
-```bash
-cd backend
-pip install -r requirements.txt
-export PYTHONPATH=.
-# Set DATABASE_URL, REDIS_URL (optional), JWT_SECRET, Teamcenter vars — see .env.example
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-```
+- **Default:** `VITE_API_URL` is empty and `VITE_PROXY_API_TARGET` is `http://api:8000` in Compose. The browser loads the UI from Vite on port **5173**; requests to `/api/...` are **proxied** to the API container, so you do not need a hard-coded API URL in the frontend bundle.
+- **Separate host/port for the API:** set `VITE_API_URL` to the full API origin (what the browser must call) and set **`CORS_ORIGINS`** to include the UI origin (comma-separated).
 
-On Windows (cmd): `set PYTHONPATH=.` before `uvicorn`. On PowerShell: `$env:PYTHONPATH="."`.
+### Install and run without Docker
 
-**Frontend**
+Use this when you prefer to run Postgres/Redis yourself or only part of the stack locally.
 
-```bash
-cd frontend
-npm ci
-npm run dev
-```
+1. **Install backend dependencies**
 
-Point `VITE_PROXY_API_TARGET` at your API (or set `VITE_API_URL`). Vite loads env from the **repository root** via `envDir` in `vite.config.ts`, so a root `.env` can hold `VITE_*` variables.
+   ```bash
+   cd backend
+   python -m venv .venv
+   ```
+
+   Activate the venv (Unix: `source .venv/bin/activate`; Windows PowerShell: `.\.venv\Scripts\Activate.ps1`), then:
+
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+2. **Configure the environment** — copy `.env.example` to the **repository root** as `.env` and set at least `DATABASE_URL`, `JWT_SECRET`, and Teamcenter-related variables as needed (see **Configuration reference**).
+
+3. **Run the API** from the `backend` directory:
+
+   ```bash
+   export PYTHONPATH=.
+   uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+
+   - Windows **cmd:** `set PYTHONPATH=.`
+   - Windows **PowerShell:** `$env:PYTHONPATH="."`
+
+4. **Install and run the frontend**
+
+   ```bash
+   cd frontend
+   npm ci
+   npm run dev
+   ```
+
+   Put `VITE_PROXY_API_TARGET` (and optionally `VITE_API_URL`) in the **repository root** `.env` — Vite is configured with `envDir` pointing at the repo root so those variables are picked up. Example for a local API on port 8000 on the same machine: set `VITE_PROXY_API_TARGET` to `http://127.0.0.1:8000` (or your LAN IP) so `/api` is proxied during `npm run dev`.
+
+### First-time login
+
+Open the web UI → **Login** → use `ADMIN_USERNAME` / `ADMIN_PASSWORD` from `.env`. After login you can run a fetch from the workbench and browse stored objects.
 
 ## Configuration reference
 
@@ -155,6 +209,4 @@ Live mode mirrors the browser flow: **GET** warmup on `TEAMCENTER_WARMUP_PATH`, 
 - Teamcenter passwords are only used server-side in the API process.
 - Prefer HTTPS and restrictive `CORS_ORIGINS` in production; pair with a reverse proxy as needed.
 
-## License / ownership
 
-Add your organization’s license and contribution guidelines here if this repository is published.
